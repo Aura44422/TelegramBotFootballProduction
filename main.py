@@ -583,6 +583,10 @@ class FootballBot:
                     subscription_type = data.split("_", 1)[1]  # fallback
                 
                 await self.process_subscription_purchase(user_id, subscription_type, update, context)
+            elif data.startswith("check_payment_"):
+                # Извлекаем тип подписки из callback_data
+                subscription_type = data.split("_", 2)[2]  # check_payment_week -> week
+                await self.check_payment_status(user_id, subscription_type, update, context)
             elif data.startswith("admin_"):
                 await self.handle_admin_callback(data, update, context)
             else:
@@ -680,6 +684,119 @@ class FootballBot:
         except Exception as e:
             logger.error(f"Ошибка при создании ссылки для оплаты: {e}")
             await update.callback_query.edit_message_text("❌ Ошибка при создании ссылки для оплаты")
+    
+    async def check_payment_status(self, user_id: int, subscription_type: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Проверка статуса оплаты"""
+        try:
+            # Проверяем статус платежа через DonationAlerts
+            payment_status = await self.donation_alerts.check_payment_status(f"user_{user_id}_{subscription_type}")
+            
+            if payment_status and payment_status.get('status') == 'success':
+                # Платеж успешен, активируем подписку
+                amount = payment_status['amount']
+                payment_id = payment_status['payment_id']
+                
+                # Определяем количество дней для подписки
+                subscription_days = {
+                    'week': 7,
+                    'two_weeks': 14,
+                    'month': 30
+                }
+                
+                days = subscription_days.get(subscription_type, 7)
+                
+                # Обновляем подписку пользователя
+                await self.db.update_user_subscription(user_id, subscription_type, days)
+                
+                # Добавляем запись о платеже
+                await self.db.add_subscription_record(user_id, subscription_type, amount, payment_id)
+                
+                success_text = f"""
+✅ **Оплата прошла успешно!**
+
+💳 **Подписка активирована:**
+📅 Тип: {subscription_type.replace('_', ' ').title()}
+💰 Сумма: {amount}₽
+⏰ Срок: {days} дней
+
+🎉 **Приятного пользования!**
+
+Теперь вы можете получать до 15 сигналов в день.
+
+💡 Используйте кнопки ниже для навигации
+"""
+                
+                keyboard = [
+                    [InlineKeyboardButton("📊 Статус подписки", callback_data="status")],
+                    [InlineKeyboardButton("⚽️ Найти матчи", callback_data="find_matches")],
+                    [InlineKeyboardButton("🔙 Назад", callback_data="start")]
+                ]
+                
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await update.callback_query.edit_message_text(
+                    success_text,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                
+            elif payment_status and payment_status.get('status') == 'pending':
+                # Платеж в обработке
+                pending_text = """
+⏳ **Платеж в обработке**
+
+💳 Ваш платеж обрабатывается платежной системой.
+⏰ Обычно это занимает 1-5 минут.
+
+🔄 Попробуйте проверить статус через несколько минут.
+"""
+                
+                keyboard = [
+                    [InlineKeyboardButton("🔄 Проверить снова", callback_data=f"check_payment_{subscription_type}")],
+                    [InlineKeyboardButton("🔙 Назад", callback_data="subscription")]
+                ]
+                
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await update.callback_query.edit_message_text(
+                    pending_text,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                
+            else:
+                # Платеж не найден или не оплачен
+                not_found_text = """
+❌ **Платеж не найден**
+
+💳 Возможные причины:
+• Платеж еще не поступил
+• Неверная сумма платежа
+• Платеж был отменен
+
+💡 **Рекомендации:**
+1. Убедитесь, что вы оплатили точно указанную сумму
+2. Подождите 5-10 минут и попробуйте снова
+3. Если проблема остается, обратитесь в поддержку
+"""
+                
+                keyboard = [
+                    [InlineKeyboardButton("🔄 Проверить снова", callback_data=f"check_payment_{subscription_type}")],
+                    [InlineKeyboardButton("💳 Попробовать снова", callback_data=f"buy_{subscription_type}")],
+                    [InlineKeyboardButton("🔙 Назад", callback_data="subscription")]
+                ]
+                
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await update.callback_query.edit_message_text(
+                    not_found_text,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                
+        except Exception as e:
+            logger.error(f"Ошибка при проверке статуса платежа: {e}")
+            await update.callback_query.edit_message_text("❌ Произошла ошибка при проверке платежа. Попробуйте позже.")
     
     async def find_matches_for_user(self, user_id: int, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Поиск матчей для пользователя"""
