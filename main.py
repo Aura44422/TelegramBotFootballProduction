@@ -688,36 +688,8 @@ class FootballBot:
     async def check_payment_status(self, user_id: int, subscription_type: str, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Проверка статуса оплаты"""
         try:
-            # Проверяем статус платежа через DonationAlerts
+            # Только реальная проверка через DonationAlerts API
             payment_status = await self.donation_alerts.check_payment_status(f"user_{user_id}_{subscription_type}")
-            
-            # Мгновенная проверка через API
-            # В реальном проекте здесь будет реальная проверка через DonationAlerts API
-            payment_status = await self.donation_alerts.check_payment_status(f"user_{user_id}_{subscription_type}")
-            
-            # Для демонстрации показываем разные статусы
-            import random
-            demo_statuses = ['pending', 'success', 'not_found']
-            demo_status = random.choice(demo_statuses)
-            
-            if demo_status == 'success':
-                payment_status = {
-                    'status': 'success',
-                    'user_id': user_id,
-                    'subscription_type': subscription_type,
-                    'amount': SUBSCRIPTION_PRICES[subscription_type],
-                    'payment_id': f'demo_{user_id}_{subscription_type}'
-                }
-            elif demo_status == 'not_found':
-                payment_status = {
-                    'status': 'not_found',
-                    'message': 'Платеж не найден'
-                }
-            else:
-                payment_status = {
-                    'status': 'pending',
-                    'message': 'Платеж в обработке'
-                }
             
             if payment_status and payment_status.get('status') == 'success':
                 # Платеж успешен, активируем подписку
