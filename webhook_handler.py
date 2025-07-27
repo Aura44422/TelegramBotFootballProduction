@@ -17,8 +17,32 @@ class WebhookHandler:
     
     def setup_routes(self):
         """Настройка маршрутов для webhook'ов"""
+        # Telegram webhook
+        self.app.router.add_post('/webhook', self.handle_telegram_webhook)
+        # DonationAlerts webhook
         self.app.router.add_post('/webhook/donation_alerts', self.handle_donation_alerts_webhook)
+        # Health check
         self.app.router.add_get('/health', self.health_check)
+    
+    async def handle_telegram_webhook(self, request):
+        """Обработка webhook от Telegram"""
+        try:
+            # Получаем данные из webhook
+            data = await request.json()
+            logger.info(f"Получен webhook от Telegram")
+            
+            # Создаем Update объект
+            from telegram import Update
+            update = Update.de_json(data, self.bot_application.bot)
+            
+            # Обрабатываем update через application
+            await self.bot_application.process_update(update)
+            
+            return web.json_response({'status': 'ok'})
+            
+        except Exception as e:
+            logger.error(f"Ошибка обработки Telegram webhook: {e}")
+            return web.json_response({'status': 'error'}, status=500)
     
     async def handle_donation_alerts_webhook(self, request):
         """Обработка webhook от DonationAlerts"""
