@@ -687,12 +687,18 @@ class FootballBot:
             user_info = await self.db.get_user(user_id)
             
             if not user_info:
-                await update.message.reply_text("❌ Пользователь не найден")
+                if update.message:
+                    await update.message.reply_text("❌ Пользователь не найден")
+                elif update.callback_query:
+                    await update.callback_query.edit_message_text("❌ Пользователь не найден")
                 return
             
             # Проверяем лимиты
             if not await self.check_user_access(user_info):
-                await update.message.reply_text("❌ У вас нет активной подписки или превышен лимит")
+                if update.message:
+                    await update.message.reply_text("❌ У вас нет активной подписки или превышен лимит")
+                elif update.callback_query:
+                    await update.callback_query.edit_message_text("❌ У вас нет активной подписки или превышен лимит")
                 return
             
             # Увеличиваем счетчики
@@ -753,7 +759,10 @@ class FootballBot:
                 
         except Exception as e:
             logger.error(f"Ошибка в find_matches_for_user: {e}")
-            await update.message.reply_text("❌ Произошла ошибка при поиске матчей")
+            if update.message:
+                await update.message.reply_text("❌ Произошла ошибка при поиске матчей")
+            elif update.callback_query:
+                await update.callback_query.edit_message_text("❌ Произошла ошибка при поиске матчей")
     
     async def check_user_access(self, user_info: Dict) -> bool:
         """Проверка доступа пользователя"""
@@ -1118,6 +1127,13 @@ class FootballBot:
                 await self.application.shutdown()
             except Exception as e:
                 logger.error(f"Ошибка при остановке приложения: {e}")
+        
+        # Закрываем сессию DonationAlerts
+        if self.donation_alerts and self.donation_alerts.session:
+            try:
+                await self.donation_alerts.session.close()
+            except Exception as e:
+                logger.error(f"Ошибка при закрытии DonationAlerts: {e}")
         
         logger.info("Бот успешно остановлен")
     
