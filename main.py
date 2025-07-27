@@ -64,6 +64,10 @@ class FootballBot:
             self.application = Application.builder().token(BOT_TOKEN).build()
             logger.info("Telegram приложение создано")
             
+            # Инициализация приложения
+            await self.application.initialize()
+            logger.info("Telegram приложение инициализировано")
+            
             # Инициализация webhook handler
             self.webhook_handler = WebhookHandler(self.db, self.donation_alerts, self.application)
             logger.info("Webhook handler инициализирован")
@@ -1070,8 +1074,11 @@ class FootballBot:
         
         # Останавливаем Telegram приложение
         if self.application:
-            await self.application.stop()
-            await self.application.shutdown()
+            try:
+                await self.application.stop()
+                await self.application.shutdown()
+            except Exception as e:
+                logger.error(f"Ошибка при остановке приложения: {e}")
         
         logger.info("Бот успешно остановлен")
     
@@ -1092,7 +1099,15 @@ class FootballBot:
             logger.info("Бот запущен и готов к работе")
             
             # Для локального запуска используем polling
-            await self.application.run_polling()
+            # Для Railway используется webhook, поэтому polling не нужен
+            if os.environ.get('RAILWAY_STATIC_URL'):
+                logger.info("Запуск в режиме webhook (Railway)")
+                # Держим приложение запущенным
+                while self.running:
+                    await asyncio.sleep(1)
+            else:
+                logger.info("Запуск в режиме polling (локально)")
+                await self.application.run_polling()
             
         except Exception as e:
             logger.error(f"Критическая ошибка в работе бота: {e}")
