@@ -185,15 +185,25 @@ class FootballBot:
             
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await update.message.reply_text(
-                welcome_text,
-                reply_markup=reply_markup,
-                parse_mode=ParseMode.MARKDOWN
-            )
+            if update.message:
+                await update.message.reply_text(
+                    welcome_text,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(
+                    welcome_text,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.MARKDOWN
+                )
             
         except Exception as e:
             logger.error(f"Ошибка в start_command: {e}")
-            await update.message.reply_text("❌ Произошла ошибка. Попробуйте позже.")
+            if update.message:
+                await update.message.reply_text("❌ Произошла ошибка. Попробуйте позже.")
+            elif update.callback_query:
+                await update.callback_query.edit_message_text("❌ Произошла ошибка. Попробуйте позже.")
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка команды /help"""
@@ -234,11 +244,18 @@ class FootballBot:
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_text(
-            help_text,
-            reply_markup=reply_markup,
-            parse_mode=ParseMode.MARKDOWN
-        )
+        if update.message:
+            await update.message.reply_text(
+                help_text,
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.MARKDOWN
+            )
+        elif update.callback_query:
+            await update.callback_query.edit_message_text(
+                help_text,
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.MARKDOWN
+            )
     
     async def status_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка команды /status"""
@@ -247,7 +264,10 @@ class FootballBot:
             user_info = await self.db.get_user(user_id)
             
             if not user_info:
-                await update.message.reply_text("❌ Пользователь не найден. Используйте /start")
+                if update.message:
+                    await update.message.reply_text("❌ Пользователь не найден. Используйте /start")
+                elif update.callback_query:
+                    await update.callback_query.edit_message_text("❌ Пользователь не найден. Используйте /start")
                 return
             
             status_text = await self.get_user_status_text(user_info)
@@ -259,15 +279,25 @@ class FootballBot:
             
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await update.message.reply_text(
-                status_text,
-                reply_markup=reply_markup,
-                parse_mode=ParseMode.MARKDOWN
-            )
+            if update.message:
+                await update.message.reply_text(
+                    status_text,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            elif update.callback_query:
+                await update.callback_query.edit_message_text(
+                    status_text,
+                    reply_markup=reply_markup,
+                    parse_mode=ParseMode.MARKDOWN
+                )
             
         except Exception as e:
             logger.error(f"Ошибка в status_command: {e}")
-            await update.message.reply_text("❌ Произошла ошибка. Попробуйте позже.")
+            if update.message:
+                await update.message.reply_text("❌ Произошла ошибка. Попробуйте позже.")
+            elif update.callback_query:
+                await update.callback_query.edit_message_text("❌ Произошла ошибка. Попробуйте позже.")
     
     async def subscription_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработка команды /subscription"""
@@ -542,7 +572,16 @@ class FootballBot:
             elif data == "find_matches":
                 await self.find_matches_for_user(user_id, update, context)
             elif data.startswith("buy_"):
-                subscription_type = data.split("_")[1]
+                # Извлекаем тип подписки из callback_data
+                if data == "buy_week":
+                    subscription_type = "week"
+                elif data == "buy_two_weeks":
+                    subscription_type = "two_weeks"
+                elif data == "buy_month":
+                    subscription_type = "month"
+                else:
+                    subscription_type = data.split("_", 1)[1]  # fallback
+                
                 await self.process_subscription_purchase(user_id, subscription_type, update, context)
             elif data.startswith("admin_"):
                 await self.handle_admin_callback(data, update, context)
