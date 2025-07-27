@@ -59,16 +59,10 @@ class DonationAlerts:
             if subscription_type not in SUBSCRIPTION_PRICES:
                 raise ValueError(f"Неизвестный тип подписки: {subscription_type}")
             
-            # Обеспечиваем наличие сессии
             await self.ensure_session()
-            
             amount = SUBSCRIPTION_PRICES[subscription_type]
             unique_id = str(uuid.uuid4())
-            
-            # Создаем уникальную ссылку для оплаты
             payment_url = f"{self.base_url}/{unique_id}"
-            
-            # Сохраняем данные платежа в кэше с webhook URL
             payment_data = {
                 'user_id': user_id,
                 'subscription_type': subscription_type,
@@ -77,15 +71,11 @@ class DonationAlerts:
                 'created_at': datetime.now(),
                 'webhook_url': f"https://telegrambotfootballproduction-production.up.railway.app/webhook/donation_alerts/{unique_id}"
             }
-            
             self.payment_links[unique_id] = payment_data
-            
-            # Создаем запрос к API DonationAlerts для создания ссылки с webhook
             headers = {
                 'Authorization': f'Bearer {self.token}',
                 'Content-Type': 'application/json'
             }
-            
             payload = {
                 'url': payment_url,
                 'amount': amount,
@@ -93,62 +83,56 @@ class DonationAlerts:
                 'comment': f'Подписка {subscription_type} для пользователя {user_id}',
                 'external_id': unique_id,
                 'webhook_url': payment_data['webhook_url'],
-                'auto_confirm': True  # Автоматическое подтверждение платежа
+                'auto_confirm': True
             }
-            
-            # В реальном проекте здесь будет API DonationAlerts
-            # Для демонстрации возвращаем тестовую ссылку
-            return {
-                'payment_url': payment_url,
-                'amount': amount,
-                'subscription_type': subscription_type,
-                'external_id': unique_id,
-                'webhook_url': payment_data['webhook_url']
-            }
-                    
+            async with self.session.post(
+                'https://www.donationalerts.com/api/v1/alerts/donations',
+                headers=headers,
+                json=payload
+            ) as response:
+                if response.status == 200:
+                    return {
+                        'payment_url': payment_url,
+                        'amount': amount,
+                        'subscription_type': subscription_type,
+                        'external_id': unique_id,
+                        'webhook_url': payment_data['webhook_url']
+                    }
+                else:
+                    logger.error(f"Ошибка создания ссылки DonationAlerts: {response.status}")
+                    return None
         except Exception as e:
             logger.error(f"Ошибка при создании ссылки для оплаты: {e}")
             return None
-    
+
     async def check_payment_status(self, unique_id: str) -> Optional[Dict]:
         """Мгновенная проверка статуса платежа"""
         try:
-            # Обеспечиваем наличие сессии
             await self.ensure_session()
-            
-            # Ищем платеж в кэше по уникальному ID
             payment_data = None
             for cached_id, data in self.payment_links.items():
                 if data.get('external_id') == unique_id or cached_id == unique_id:
                     payment_data = data
                     break
-            
             if not payment_data:
                 return {
                     'status': 'not_found',
                     'message': 'Платеж не найден'
                 }
-            
-            # Мгновенная проверка через API DonationAlerts
             headers = {
                 'Authorization': f'Bearer {self.token}',
                 'Content-Type': 'application/json'
             }
-            
-            # Проверяем статус платежа через API
             async with self.session.get(
                 f'https://www.donationalerts.com/api/v1/alerts/donations/{unique_id}',
                 headers=headers,
-                timeout=aiohttp.ClientTimeout(total=5)  # Быстрый таймаут для мгновенной проверки
+                timeout=aiohttp.ClientTimeout(total=5)
             ) as response:
                 if response.status == 200:
                     data = await response.json()
-                    
-                    # Мгновенная обработка статуса
                     if data.get('status') == 'paid':
                         paid_amount = float(data.get('amount', 0))
                         required_amount = payment_data['amount']
-                        
                         if paid_amount >= required_amount:
                             return {
                                 'status': 'success',
@@ -169,12 +153,8 @@ class DonationAlerts:
                     else:
                         return {'status': 'failed', 'message': 'Платеж не прошел'}
                 else:
-                    # Для демонстрации возвращаем тестовый статус
-                    return {
-                        'status': 'pending',
-                        'message': 'Платеж в обработке'
-                    }
-                    
+                    logger.error(f"Ошибка проверки статуса платежа: {response.status}")
+                    return None
         except asyncio.TimeoutError:
             logger.warning(f"Таймаут при проверке платежа {unique_id}")
             return {'status': 'timeout', 'message': 'Превышено время ожидания'}
