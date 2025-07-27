@@ -136,4 +136,5 @@ class WebhookHandler:
         logger.info("Webhook сервер остановлен")
 
 # Импорты для inline кнопок
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ParseMode 
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ParseMode 
