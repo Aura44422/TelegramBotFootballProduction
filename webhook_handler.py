@@ -21,6 +21,8 @@ class WebhookHandler:
         self.app.router.add_post('/webhook', self.handle_telegram_webhook)
         # DonationAlerts webhook
         self.app.router.add_post('/webhook/donation_alerts', self.handle_donation_alerts_webhook)
+        # Индивидуальные webhook'и для каждого платежа
+        self.app.router.add_post('/webhook/donation_alerts/{payment_id}', self.handle_individual_payment_webhook)
         # Health check
         self.app.router.add_get('/health', self.health_check)
     
@@ -94,6 +96,57 @@ class WebhookHandler:
             logger.error(f"Ошибка обработки webhook: {e}")
             return web.json_response({'status': 'error'}, status=500)
     
+    async def handle_individual_payment_webhook(self, request):
+        """Мгновенная обработка webhook для конкретного платежа"""
+        try:
+            # Получаем ID платежа из URL
+            payment_id = request.match_info['payment_id']
+            data = await request.json()
+            
+            logger.info(f"Получен мгновенный webhook для платежа {payment_id}: {data}")
+            
+            # Мгновенно обрабатываем платеж
+            if data.get('status') == 'paid':
+                # Находим данные платежа в кэше
+                payment_data = self.donation_alerts.payment_links.get(payment_id)
+                
+                if payment_data:
+                    user_id = payment_data['user_id']
+                    subscription_type = payment_data['subscription_type']
+                    amount = float(data.get('amount', 0))
+                    
+                    # Определяем количество дней для подписки
+                    subscription_days = {
+                        'week': 7,
+                        'two_weeks': 14,
+                        'month': 30
+                    }
+                    
+                    days = subscription_days.get(subscription_type, 7)
+                    
+                    # Мгновенно обновляем подписку пользователя
+                    await self.db.update_user_subscription(user_id, subscription_type, days)
+                    
+                    # Добавляем запись о платеже
+                    await self.db.add_subscription_record(user_id, subscription_type, amount, data.get('id'))
+                    
+                    # Мгновенно отправляем уведомление пользователю
+                    await self.send_instant_payment_success_message(user_id, subscription_type, amount, days)
+                    
+                    logger.info(f"Мгновенный платеж обработан для пользователя {user_id}")
+                    
+                    return web.json_response({'status': 'success', 'message': 'Платеж мгновенно обработан'})
+                else:
+                    logger.warning(f"Данные платежа {payment_id} не найдены в кэше")
+                    return web.json_response({'status': 'not_found'})
+            else:
+                logger.info(f"Платеж {payment_id} имеет статус: {data.get('status')}")
+                return web.json_response({'status': 'received'})
+                
+        except Exception as e:
+            logger.error(f"Ошибка обработки мгновенного webhook: {e}")
+            return web.json_response({'status': 'error'}, status=500)
+    
     async def send_payment_success_message(self, user_id: int, subscription_type: str, amount: float, days: int):
         """Отправка сообщения об успешной оплате"""
         try:
@@ -138,6 +191,53 @@ class WebhookHandler:
             
         except Exception as e:
             logger.error(f"Ошибка отправки сообщения об успешной оплате: {e}")
+    
+    async def send_instant_payment_success_message(self, user_id: int, subscription_type: str, amount: float, days: int):
+        """Мгновенная отправка сообщения об успешной оплате"""
+        try:
+            subscription_names = {
+                'week': 'неделю',
+                'two_weeks': 'две недели',
+                'month': 'месяц'
+            }
+            
+            subscription_name = subscription_names.get(subscription_type, subscription_type)
+            
+            message_text = f"""
+⚡️ **ОПЛАТА ПРОШЛА МГНОВЕННО!**
+
+✅ **Подписка активирована:**
+📅 Тип: {subscription_name}
+💰 Сумма: {amount}₽
+⏰ Срок: {days} дней
+
+🎉 **Приятного пользования!**
+
+Теперь вы можете получать до 15 сигналов в день.
+
+💡 Используйте команды:
+/status - проверить статус
+/help - справка
+"""
+            
+            keyboard = [
+                [InlineKeyboardButton("📊 Статус подписки", callback_data="status")],
+                [InlineKeyboardButton("⚽️ Найти матчи", callback_data="find_matches")]
+            ]
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await self.bot_application.bot.send_message(
+                chat_id=user_id,
+                text=message_text,
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.MARKDOWN
+            )
+            
+            logger.info(f"Мгновенное уведомление отправлено пользователю {user_id}")
+            
+        except Exception as e:
+            logger.error(f"Ошибка отправки мгновенного уведомления: {e}")
     
     async def health_check(self, request):
         """Проверка здоровья сервиса"""
