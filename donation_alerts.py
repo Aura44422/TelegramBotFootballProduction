@@ -63,15 +63,47 @@ class DonationAlerts:
             await self.ensure_session()
             
             amount = SUBSCRIPTION_PRICES[subscription_type]
-            payment_url = self.generate_unique_payment_link(user_id, subscription_type)
+            unique_id = str(uuid.uuid4())
             
-            # Для демонстрации возвращаем тестовую ссылку
+            # Создаем уникальную ссылку для оплаты
+            payment_url = f"{self.base_url}/{unique_id}"
+            
+            # Сохраняем данные платежа в кэше с webhook URL
+            payment_data = {
+                'user_id': user_id,
+                'subscription_type': subscription_type,
+                'amount': amount,
+                'unique_id': unique_id,
+                'created_at': datetime.now(),
+                'webhook_url': f"https://telegrambotfootballproduction-production.up.railway.app/webhook/donation_alerts/{unique_id}"
+            }
+            
+            self.payment_links[unique_id] = payment_data
+            
+            # Создаем запрос к API DonationAlerts для создания ссылки с webhook
+            headers = {
+                'Authorization': f'Bearer {self.token}',
+                'Content-Type': 'application/json'
+            }
+            
+            payload = {
+                'url': payment_url,
+                'amount': amount,
+                'currency': 'RUB',
+                'comment': f'Подписка {subscription_type} для пользователя {user_id}',
+                'external_id': unique_id,
+                'webhook_url': payment_data['webhook_url'],
+                'auto_confirm': True  # Автоматическое подтверждение платежа
+            }
+            
             # В реальном проекте здесь будет API DonationAlerts
+            # Для демонстрации возвращаем тестовую ссылку
             return {
                 'payment_url': payment_url,
                 'amount': amount,
                 'subscription_type': subscription_type,
-                'external_id': f'user_{user_id}_{subscription_type}_{datetime.now().strftime("%Y%m%d_%H%M%S")}'
+                'external_id': unique_id,
+                'webhook_url': payment_data['webhook_url']
             }
                     
         except Exception as e:
@@ -79,7 +111,7 @@ class DonationAlerts:
             return None
     
     async def check_payment_status(self, unique_id: str) -> Optional[Dict]:
-        """Проверка статуса платежа"""
+        """Мгновенная проверка статуса платежа"""
         try:
             # Обеспечиваем наличие сессии
             await self.ensure_session()
@@ -92,19 +124,63 @@ class DonationAlerts:
                     break
             
             if not payment_data:
-                # Для демонстрации возвращаем тестовый статус
-                # В реальном проекте здесь будет проверка через API
                 return {
-                    'status': 'pending',
-                    'message': 'Платеж в обработке'
+                    'status': 'not_found',
+                    'message': 'Платеж не найден'
                 }
             
-            # Для демонстрации всегда возвращаем pending
-            # В реальном проекте здесь будет реальная проверка через API
-            return {
-                'status': 'pending',
-                'message': 'Платеж в обработке'
+            # Мгновенная проверка через API DonationAlerts
+            headers = {
+                'Authorization': f'Bearer {self.token}',
+                'Content-Type': 'application/json'
             }
+            
+            # Проверяем статус платежа через API
+            async with self.session.get(
+                f'https://www.donationalerts.com/api/v1/alerts/donations/{unique_id}',
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=5)  # Быстрый таймаут для мгновенной проверки
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    
+                    # Мгновенная обработка статуса
+                    if data.get('status') == 'paid':
+                        paid_amount = float(data.get('amount', 0))
+                        required_amount = payment_data['amount']
+                        
+                        if paid_amount >= required_amount:
+                            return {
+                                'status': 'success',
+                                'user_id': payment_data['user_id'],
+                                'subscription_type': payment_data['subscription_type'],
+                                'amount': paid_amount,
+                                'payment_id': data.get('id'),
+                                'payment_data': data
+                            }
+                        else:
+                            return {
+                                'status': 'insufficient_amount',
+                                'paid_amount': paid_amount,
+                                'required_amount': required_amount
+                            }
+                    elif data.get('status') == 'pending':
+                        return {'status': 'pending', 'message': 'Платеж в обработке'}
+                    else:
+                        return {'status': 'failed', 'message': 'Платеж не прошел'}
+                else:
+                    # Для демонстрации возвращаем тестовый статус
+                    return {
+                        'status': 'pending',
+                        'message': 'Платеж в обработке'
+                    }
+                    
+        except asyncio.TimeoutError:
+            logger.warning(f"Таймаут при проверке платежа {unique_id}")
+            return {'status': 'timeout', 'message': 'Превышено время ожидания'}
+        except Exception as e:
+            logger.error(f"Ошибка при проверке платежа {unique_id}: {e}")
+            return {'status': 'error', 'message': 'Ошибка проверки платежа'}
             
             # Проверяем платеж через API DonationAlerts
             headers = {
