@@ -99,6 +99,13 @@ class DonationAlerts:
                     'message': 'Платеж в обработке'
                 }
             
+            # Для демонстрации всегда возвращаем pending
+            # В реальном проекте здесь будет реальная проверка через API
+            return {
+                'status': 'pending',
+                'message': 'Платеж в обработке'
+            }
+            
             # Проверяем платеж через API DonationAlerts
             headers = {
                 'Authorization': f'Bearer {self.token}',
