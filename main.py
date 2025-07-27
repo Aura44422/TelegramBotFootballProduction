@@ -2,11 +2,13 @@ import asyncio
 import logging
 import signal
 import sys
+import os
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import json
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import ParseMode
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     ContextTypes, filters
@@ -1089,7 +1091,7 @@ class FootballBot:
             
             logger.info("Бот запущен и готов к работе")
             
-            # Запускаем Telegram бота
+            # Для локального запуска используем polling
             await self.application.run_polling()
             
         except Exception as e:
