@@ -691,6 +691,13 @@ class FootballBot:
             # Проверяем статус платежа через DonationAlerts
             payment_status = await self.donation_alerts.check_payment_status(f"user_{user_id}_{subscription_type}")
             
+            # Для демонстрации всегда показываем статус "pending"
+            # В реальном проекте здесь будет реальная проверка
+            payment_status = {
+                'status': 'pending',
+                'message': 'Платеж в обработке'
+            }
+            
             if payment_status and payment_status.get('status') == 'success':
                 # Платеж успешен, активируем подписку
                 amount = payment_status['amount']
